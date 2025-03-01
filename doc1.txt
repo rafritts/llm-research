@@ -1,0 +1,8 @@
+Joseph Wiegand is the Operations Manager of X-Energy, a  small nuclear reactor start up.  
+
+Here are some of the important things he thinks about while commissioning a nuclear reactor. 
+
+Validation of equipment is in spec
+Systems are aligned for expeditious testing
+Reactor is responsive to control room
+Testing procedures are written and approved. 

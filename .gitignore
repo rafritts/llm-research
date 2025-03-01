@@ -1,0 +1,4 @@
+.conda/
+.vscode/
+node_modules/
+supabase/.*
