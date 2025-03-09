@@ -55,7 +55,8 @@ class QueryInput(BaseModel):
     temperature: float = 0.7
     allow_tools: bool = True
     model: Optional[str] = None  # Allow specifying a model per request
-    use_chain_of_thought: bool = False  # Flag for automatic CoT processing
+    use_rag: bool = False  # Flag for automatic RAG processing
+    use_cot: bool = False  # Flag for automatic CoT processing
 
 
 class ModelConfigInput(BaseModel):

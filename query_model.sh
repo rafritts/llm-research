@@ -14,7 +14,7 @@ echo "Sending query: $1"
 curl -N -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
-  --data-raw "{\"query\": \"$1\", \"context_window\": $CONTEXT_WINDOW, \"temperature\": $TEMPERATURE, \"force_tools\": \"false\", \"force_cot\": \"false\", \"force_rag\": \"false\"}" \
+  --data-raw "{\"query\": \"$1\", \"context_window\": $CONTEXT_WINDOW, \"temperature\": $TEMPERATURE, \"use_cot\": \"false\", \"use_rag\": \"false\"}" \
   --max-time 300
 
 echo -e "\n"

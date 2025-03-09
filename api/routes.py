@@ -5,11 +5,8 @@ import traceback
 import sys
 from api.handlers import (
     handle_query, 
-    handle_update_model_config, 
-    handle_get_model_config,
     handle_create_embedding, 
-    handle_create_text_embedding, 
-    handle_health_check
+    handle_create_text_embedding
 )
 
 logger = logging.getLogger(__name__)
@@ -25,10 +22,6 @@ def setup_routes(app: FastAPI):
         logger.error(f"Unhandled exception: {str(exc)}")
         return JSONResponse(status_code=500, content={"detail": str(exc)})
     
-    # Model configuration endpoints
-    app.post("/config/models")(handle_update_model_config)
-    app.get("/config/models")(handle_get_model_config)
-    
     # Query endpoint
     app.post("/query")(handle_query)
     
@@ -36,5 +29,3 @@ def setup_routes(app: FastAPI):
     app.post("/embed")(handle_create_embedding)
     app.post("/embed-text")(handle_create_text_embedding)
     
-    # Health check endpoint
-    app.get("/health")(handle_health_check)
