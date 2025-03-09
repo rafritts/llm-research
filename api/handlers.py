@@ -1,10 +1,12 @@
 import logging
 import json
+import asyncio
+from typing import AsyncGenerator
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from models.schema import QueryInput, ModelConfigInput, Document
 from config import DEFAULT_MODEL, TOOL_MODELS
-from llm.ollama import generate_response, get_embedding, list_available_models, check_connection as check_ollama
+from llm.ollama import generate_response, generate_response_stream, get_embedding, list_available_models, check_connection as check_ollama
 from database.supabase import supabase, store_document, check_connection as check_supabase
 from tools.base import format_tool_specifications
 from tools.command_execution import CommandExecutionTool
@@ -117,142 +119,85 @@ async def handle_query(input_data: QueryInput):
     else:
         prompt = base_prompt
 
-    try:
-        # First pass - generate initial response from the LLM
-        model_response = generate_response(
-            prompt, 
-            model=query_model, 
-            temperature=input_data.temperature
-        )
-        
-        tool_response = None
-
-        # Check if the response contains a tool call
-        if input_data.allow_tools:
-            try:
-                # Try to find JSON pattern using simple heuristic
-                if "{" in model_response and "}" in model_response:
-                    json_start = model_response.find("{")
-                    json_end = model_response.rfind("}") + 1
-                    json_str = model_response[json_start:json_end]
-
+    async def generate_streaming_response() -> AsyncGenerator[str, None]:
+        try:
+            first_chunk = True
+            async for chunk in generate_response_stream(
+                prompt,
+                model=query_model,
+                temperature=input_data.temperature
+            ):
+                # For the first chunk, check if it might be a tool call
+                if first_chunk and input_data.allow_tools and "{" in chunk:
+                    # Buffer the response until we can determine if it's JSON
+                    buffer = chunk
+                    async for next_chunk in generate_response_stream(
+                        prompt,
+                        model=query_model,
+                        temperature=input_data.temperature
+                    ):
+                        buffer += next_chunk
+                        if "}" in buffer:
+                            break
+                    
                     try:
+                        # Try to parse as JSON
+                        json_start = buffer.find("{")
+                        json_end = buffer.rfind("}") + 1
+                        json_str = buffer[json_start:json_end]
                         parsed = json.loads(json_str)
-
-                        # Check if this has the expected structure
-                        if (
-                            "tool_calls" in parsed
-                            and isinstance(parsed["tool_calls"], list)
-                            and len(parsed["tool_calls"]) > 0
-                        ):
-                            # Extract the tool call
+                        
+                        if "tool_calls" in parsed and isinstance(parsed["tool_calls"], list):
+                            # Handle tool call
                             tool_call = parsed["tool_calls"][0]
                             tool_name = tool_call.get("tool")
                             params = tool_call.get("parameters", {})
-
-                            # Execute the appropriate tool
-                            if tool_name == "command_execution":
-                                result = await CommandExecutionTool.execute(params)
-                                tool_response = {
-                                    "tool": "command_execution",
-                                    "parameters": params,
-                                    "result": result.dict(),
-                                }
-
-                                # Get the model for command execution followup
-                                cmd_model = TOOL_MODELS.get("command_execution", query_model)
+                            
+                            if tool_name in ["command_execution", "rag_search", "chain_of_thought"]:
+                                # Execute tool and get follow-up response
+                                if tool_name == "command_execution":
+                                    tool = CommandExecutionTool
+                                    model = TOOL_MODELS.get("command_execution", query_model)
+                                elif tool_name == "rag_search":
+                                    tool = RAGSearchTool
+                                    model = TOOL_MODELS.get("rag_search", query_model)
+                                else:  # chain_of_thought
+                                    tool = ChainOfThoughtTool
+                                    model = TOOL_MODELS.get("chain_of_thought", query_model)
                                 
-                                # Generate a follow-up response with the tool results
-                                followup_prompt = f"""You previously decided to use the command_execution tool with the command: {params.get('command')}
-
-                                                    The tool returned the following result:
-                                                    Exit code: {result.exit_code}
-                                                    Output: {result.output or "No output"}
-                                                    Error: {result.error or "No error"}
-
-                                                    Based on this result, please provide a final response to the user's original query:
+                                result = await tool.execute(params)
+                                
+                                # Generate follow-up response with tool results
+                                followup_prompt = f"""Based on the tool results:
+                                                    {result.output or 'No output'}
+                                                    {f"Error: {result.error}" if result.error else ""}
+                                                    
+                                                    Please provide a final response to the original query:
                                                     {input_data.query}"""
-
-                                model_response = generate_response(
-                                    followup_prompt,
-                                    model=cmd_model,
-                                    temperature=input_data.temperature
-                                )
-
-                            elif tool_name == "rag_search":
-                                result = await RAGSearchTool.execute(params)
-                                tool_response = {
-                                    "tool": "rag_search",
-                                    "parameters": params,
-                                    "result": result.dict(),
-                                }
-
-                                # Get the model for RAG search followup
-                                rag_model = TOOL_MODELS.get("rag_search", query_model)
                                 
-                                # Generate a follow-up response with the search results
-                                followup_prompt = f"""You previously decided to search the knowledge base with query: "{params.get('query')}"
-
-                                                    The search returned the following results:
-                                                    {result.output or "No results found"}
-                                                    {f"Error: {result.error}" if result.error else ""}
-
-                                                    Based on these search results, please provide a final response to the user's original query:
-                                                    {input_data.query}
-
-                                                    Remember to incorporate the relevant information from the search results, but don't mention that you performed a search unless it's directly relevant to answering the query."""
-
-                                model_response = generate_response(
+                                async for chunk in generate_response_stream(
                                     followup_prompt,
-                                    model=rag_model,
+                                    model=model,
                                     temperature=input_data.temperature
-                                )
-
-                            elif tool_name == "chain_of_thought":
-                                result = await ChainOfThoughtTool.execute(params)
-                                tool_response = {
-                                    "tool": "chain_of_thought",
-                                    "parameters": params,
-                                    "result": result.dict(),
-                                }
-
-                                # Get the model for chain of thought followup
-                                cot_model = TOOL_MODELS.get("chain_of_thought", query_model)
-                                
-                                # Generate a follow-up response with the reasoning results
-                                followup_prompt = f"""You previously decided to use step-by-step reasoning to think through this question: "{params.get('question')}"
-
-                                                    Here is the step-by-step analysis:
-                                                    {result.output or "No analysis generated"}
-                                                    {f"Error: {result.error}" if result.error else ""}
-
-                                                    Based on this analysis, please provide a final response to the user's original query:
-                                                    {input_data.query}
-
-                                                    You can incorporate parts of the step-by-step reasoning in your answer to show your work."""
-
-                                model_response = generate_response(
-                                    followup_prompt,
-                                    model=cot_model,
-                                    temperature=input_data.temperature
-                                )
+                                ):
+                                    yield chunk
+                                return
+                            
                     except json.JSONDecodeError:
-                        # Not valid JSON, continue with normal response
-                        pass
-            except Exception as e:
-                logger.warning(f"Error processing tool call: {str(e)}")
+                        # Not valid JSON, proceed with normal streaming
+                        yield buffer
+                
+                first_chunk = False
+                yield chunk
 
-        # Return final response
-        return {
-            "response": model_response,
-            "tool_used": tool_response is not None,
-            "tool_details": tool_response,
-            "model_used": query_model,
-        }
+        except Exception as e:
+            logger.error(f"Error during streaming LLM inference: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"LLM inference failed: {str(e)}")
 
-    except Exception as e:
-        logger.error(f"Error during LLM inference: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"LLM inference failed: {str(e)}")
+    return StreamingResponse(
+        generate_streaming_response(),
+        media_type="text/event-stream"
+    )
 
 async def handle_create_embedding(document: Document):
     """Create embeddings for a document and store in Supabase pgvector"""
