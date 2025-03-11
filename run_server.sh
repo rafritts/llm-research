@@ -15,4 +15,4 @@ if ! curl -s http://localhost:11434/api/version > /dev/null; then
 fi
 
 # Run the FastAPI server
-python app.py
+poetry run python app.py

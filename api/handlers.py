@@ -2,11 +2,11 @@ import logging
 from fastapi.responses import StreamingResponse
 from models.schema import QueryInput, Document
 from config import DEFAULT_MODEL
-from tools.base import format_tool_specifications
 from service.chain_of_thought_service import generate_chain_of_thought_response
+from service.command_execution_service import generate_tool_execution_prompt
 from service.embeddings import create_document_embedding, create_text_embedding
 from service.rag_service import generate_rag_response
-from .util import AsyncStreamingUtils
+from llm.ollama import generate_response_stream
 
 logger = logging.getLogger(__name__)
 
@@ -18,41 +18,30 @@ async def handle_query(input_data: QueryInput):
     if input_data.use_rag:
         # Use RAG service
         prompt = await generate_rag_response(input_data.query)
+        response_stream = generate_response_stream(prompt, model=query_model, temperature=input_data.temperature)
 
     elif input_data.use_cot:
         # Use Chain of Thought via service
         prompt = await generate_chain_of_thought_response(input_data.query)
+        response_stream = generate_response_stream(prompt, model=query_model, temperature=input_data.temperature)
 
     else:
         # Regular query with optional tool access
-        tool_specs = format_tool_specifications() if input_data.allow_tools else ""
-        prompt = f"""{tool_specs if tool_specs else ""}
-                        {input_data.query}"""
         if input_data.allow_tools:
-            prompt = f"""When you need to use a tool, respond with JSON in the following format:
-                        {{
-                            "thoughts": "your reasoning about what tool to use and why",
-                            "tool_calls": [
-                                {{
-                                    "tool": "tool_name",
-                                    "parameters": {{
-                                        "param1": "value1"
-                                    }}
-                                }}
-                            ]
-                        }}
-                        You can only use one tool. If you don't need to use a tool, just respond normally.
-
-                        {prompt}"""
+            response_stream = generate_tool_execution_prompt(
+                query=input_data.query,
+                model=query_model,
+                temperature=input_data.temperature
+            )
+        else:
+            response_stream = generate_response_stream(
+                input_data.query,
+                model=query_model,
+                temperature=input_data.temperature
+            )
 
     return StreamingResponse(
-        AsyncStreamingUtils.handle_streaming_response(
-            prompt=prompt,
-            query_model=query_model,
-            temperature=input_data.temperature,
-            allow_tools=input_data.allow_tools,
-            original_query=input_data.query,
-        ),
+        response_stream,
         media_type="text/event-stream",
     )
 
