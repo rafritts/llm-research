@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional, Tuple, Union, AsyncGenerator
 import json
 from tools.base import format_tool_specifications
 from tools.command_execution import CommandExecutionTool
@@ -50,8 +50,8 @@ async def generate_tool_execution_prompt(
     query: str,
     model: str,
     temperature: float
-) -> str:
-    """Generate a prompt for tool execution, execute any tool calls, and return final response"""
+) -> AsyncGenerator[str, None]:
+    """Generate a prompt for tool execution, execute any tool calls, and yield the conversation"""
     tool_specs = format_tool_specifications()
     initial_prompt = f"""{tool_specs}
                 {query}"""
@@ -75,28 +75,38 @@ async def generate_tool_execution_prompt(
     # Get initial response
     buffer = ""
     first_chunk = True
+    
     async for chunk in generate_response_stream(tool_prompt, model=model, temperature=temperature):
         if first_chunk and "{" in chunk:
             buffer = chunk
-            async for next_chunk in generate_response_stream(tool_prompt, model=model, temperature=temperature):
-                buffer += next_chunk
-                if "}" in buffer:
-                    break
+            while "}" not in buffer:
+                async for next_chunk in generate_response_stream(tool_prompt, model=model, temperature=temperature):
+                    buffer += next_chunk
+                    if "}" in buffer:
+                        break
             
             # Try to execute tool call if present
+            yield buffer  # First yield the model's reasoning and tool call
+            
             result = await parse_and_execute_tool_call(buffer)
             if result:
-                # Generate followup response based on tool execution
+                # Stream the tool execution results
+                tool_result = f"\n\nTool Execution Results:\n{result.output or 'No output'}"
+                if result.error:
+                    tool_result += f"\nError: {result.error}"
+                yield tool_result
+
+                # Generate and stream followup response
                 followup_prompt = f"""Based on the tool execution results:
                                     {result.output or 'No output'}
                                     {f"Error: {result.error}" if result.error else ""}
                                     Please provide a final response to: {query}"""
-                final_response = ""
-                async for chunk in generate_response_stream(followup_prompt, model=model, temperature=temperature):
-                    final_response += chunk
-                return final_response
+                
+                yield "\n\nFinal Response:\n"
+                async for final_chunk in generate_response_stream(followup_prompt, model=model, temperature=temperature):
+                    yield final_chunk
+                return
             
         first_chunk = False
         buffer += chunk
-
-    return buffer  # Return accumulated response if no tool was executed
+        yield chunk  # Stream regular responses directly

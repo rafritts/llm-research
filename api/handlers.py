@@ -28,7 +28,8 @@ async def handle_query(input_data: QueryInput):
     else:
         # Regular query with optional tool access
         if input_data.allow_tools:
-            response_stream = await generate_tool_execution_prompt(
+            # Now returns an AsyncGenerator that streams the entire conversation
+            response_stream = generate_tool_execution_prompt(
                 query=input_data.query,
                 model=query_model,
                 temperature=input_data.temperature
