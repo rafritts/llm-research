@@ -53,7 +53,6 @@ class ToolResponse(BaseModel):
 class QueryInput(BaseModel):
     query: str
     temperature: float = 0.7
-    allow_tools: bool = True
     model: Optional[str] = None  # Allow specifying a model per request
     use_rag: bool = False  # Flag for automatic RAG processing
     use_cot: bool = False  # Flag for automatic CoT processing

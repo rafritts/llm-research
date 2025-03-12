@@ -3,8 +3,8 @@ from fastapi.responses import StreamingResponse
 from models.schema import QueryInput, Document
 from config import DEFAULT_MODEL
 from service.chain_of_thought_service import generate_chain_of_thought_response
-from service.command_execution_service import generate_tool_execution_prompt
-from service.embeddings import create_document_embedding, create_text_embedding
+from service.base_inference_service import generate_response
+from tools.embeddings import create_document_embedding, create_text_embedding
 from service.rag_service import generate_rag_response
 from llm.ollama import generate_response_stream
 
@@ -27,18 +27,11 @@ async def handle_query(input_data: QueryInput):
 
     else:
         # Regular query with optional tool access
-        if input_data.allow_tools:
-            # Now returns an AsyncGenerator that streams the entire conversation
-            response_stream = generate_tool_execution_prompt(
-                query=input_data.query,
-                model=query_model,
-                temperature=input_data.temperature
-            )
-        else:
-            response_stream = generate_response_stream(
-                input_data.query,
-                model=query_model,
-                temperature=input_data.temperature
+        # Now returns an AsyncGenerator that streams the entire conversation
+        response_stream = generate_response(
+            query=input_data.query,
+            model=query_model,
+            temperature=input_data.temperature
             )
 
     return StreamingResponse(
