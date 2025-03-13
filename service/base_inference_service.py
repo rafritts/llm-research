@@ -41,9 +41,10 @@ async def generate_response(
 ) -> AsyncGenerator[str, None]:
     """Generate a prompt for command execution and handle the conversation flow"""
     logger.info(f"Generating response for query: {query}")
-    initial_prompt = f"""You are an AI assistant. Examine the user's request. You are able to execute the following command line tools: {ALLOWED_COMMANDS}
+    initial_prompt = f"""You are an AI assistant. 
+                     You are able to execute the following command line tools: {ALLOWED_COMMANDS}
     
-    If the user's request requires executing a command line tool, respond with JSON in this format:
+    Examine the user's request. If the user's request would benefit from executing a command line tool, respond with JSON in this format, on a single line:
     {{
         "thoughts": "your reasoning about what command to run and why",
         "tool_calls": [
@@ -55,12 +56,9 @@ async def generate_response(
             }}
         ]
     }}
-    If no command needs to be run, respond with JSON in this format:
-    {{
-        "thoughts": "none"
-    }}
+    If no command needs to be run, simply respond to the users prompt.
     
-    User request: {query}"""
+    User prompt: {query}"""
 
 
     # Do ollama call
@@ -69,23 +67,30 @@ async def generate_response(
     # if should_use_command_line_json is a json object, then we should execute the command
     if should_use_command_line_json.startswith("{") or should_use_command_line_json.startswith("```json"):
         # Execute the command
+        logger.info("Should execute command")
         result = await parse_and_execute_tool_call(should_use_command_line_json)
         if result:
             # Stream the command execution results
             tool_result = f"\n\nCommand Execution Results:\n{result.output or 'No output'}"
             if result.error:
                 tool_result += f"\nError: {result.error}"
-            yield tool_result
+            #yield tool_result
 
             # Generate and stream followup response
-            followup_prompt = f"""Based on the command execution results:
+            followup_prompt = f"""Based on your command execution results:
                                 {result.output or 'No output'}
                                 {f"Error: {result.error}" if result.error else ""}
-                                Please provide a final response to: {query}"""
+                                Please provide a final response to: {query}
+                                """ 
             
-            yield "\n\nFinal Response:\n"
+            #yield "\n\nFinal Response:\n"
             async for final_chunk in generate_response_stream(followup_prompt, model=model, temperature=temperature):
                 yield final_chunk
             return
+    else:
+        # Stream the initial prompt
+        logger.info("Should not execute command")
+        async for chunk in generate_response_stream(query, model=model, temperature=temperature):
+            yield chunk
 
     logger.debug("Response generation completed without tool execution")

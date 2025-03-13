@@ -14,7 +14,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Model configuration
 class ModelNames(str, Enum):
-    GEMMA = "gemma2:27b"
+    GEMMA = "gemma3:27b"
     DEEPSEEKR1 = "deepseek-r1:32b"
 
 DEFAULT_MODEL = ModelNames.GEMMA
