@@ -76,6 +76,7 @@ async def generate_response(
         "thoughts": "Getting the date",
         "cli_command": "date +%A"
     }}
+    Do not escape double quotes in the JSON with a \.
     
     If no command needs to be run, simply respond to the users prompt.
     
