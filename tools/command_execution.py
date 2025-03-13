@@ -15,7 +15,7 @@ class CommandExecutionTool(BaseTool):
     @classmethod
     async def execute(cls, parameters: Dict[str, Any]):
         """Execute a shell command with safety checks"""
-        command = parameters.get("command", "")
+        command = parameters.get("cli_command", "")
         logger.info(f"Attempting to execute command: {command}")
         
         # Parse the command to get the base command

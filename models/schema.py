@@ -8,7 +8,7 @@ class CommandExecutionTool(BaseModel):
     description: str = "Execute a shell command and return its output"
 
     class Parameters(BaseModel):
-        command: str = Field(..., description="The command to execute")
+        cli_command: str = Field(..., description="The command to execute")
 
     parameters: Parameters
 
@@ -39,8 +39,8 @@ class ChainOfThoughtTool(BaseModel):
 
 
 class ToolCall(BaseModel):
-    tool: str
-    parameters: Dict[str, Any]
+    thoughts: str
+    command_cli: str
 
 
 class ToolResponse(BaseModel):

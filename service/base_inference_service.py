@@ -14,20 +14,41 @@ async def parse_and_execute_tool_call(response: str) -> Optional[ToolResponse]:
     """Parse a potential tool call from the LLM response and execute if valid"""
     try:
         logger.info("Attempting to parse tool call from response")
-        if response.startswith("```json"):
-            response = response.replace("```json", "").replace("```", "")
-        parsed = json.loads(response)
-        if isinstance(parsed, dict) and "tool_calls" in parsed:
-            tool_calls = parsed["tool_calls"]
-            if tool_calls and len(tool_calls) > 0:
-                logger.info(f"Found valid tool call: {json.dumps(tool_calls[0])}")
-                tool_call = tool_calls[0]
-                return await execute_command_tool(tool_call)
-        else:
-            logger.debug("No tool calls found in response")
+        # Clean up markdown and whitespace
+        response = response.strip()
+        
+        if "```" in response:
+            # Extract content between code block markers, handling multiple backticks
+            parts = response.split("```")
+            if len(parts) >= 3:  # Has opening and closing markers
+                response = parts[1]
+                # Remove any language identifier (e.g. 'json')
+                if response.startswith("json"):
+                    response = response[4:].strip()
+        
+        # If response looks like a Python dict string, convert it to JSON format
+        if response.startswith("{") and ("'" in response or "}" in response):
+            try:
+                # Handle Python dict string format
+                parsed_dict = eval(response)  # Safe since we know it's a dict string
+                response = json.dumps(parsed_dict)  # Convert to proper JSON
+            except:
+                pass
                 
-    except json.JSONDecodeError:
-        logger.warning("Response is not in JSON format")
+        # Handle escaped quotes in JSON
+        response = response.replace('\\"', '"')  # Handle escaped double quotes
+        response = response.replace('"%', '%')   # Fix common date format issue
+        
+        parsed = json.loads(response)
+        if isinstance(parsed, dict):
+            logger.info(f"Found valid tool call: {json.dumps(parsed)}")
+            return await execute_command_tool(parsed)
+        else:
+            logger.debug("Invalid tool call format - expected a dictionary")
+                
+    except json.JSONDecodeError as e:
+        logger.warning(f"Response is not in JSON format: {str(e)}")
+        logger.debug(f"Attempted to parse: {response}")
     except Exception as e:
         logger.exception("Error executing tool")
         print(f"Error executing tool: {str(e)}")
@@ -44,28 +65,27 @@ async def generate_response(
     initial_prompt = f"""You are an AI assistant. 
                      You are able to execute the following command line tools: {ALLOWED_COMMANDS}
     
-    Examine the user's request. If the user's request would benefit from executing a command line tool, respond with JSON in this format, on a single line:
+    Examine the user's request. If the user's request would benefit from executing a command line tool, respond with JSON in this format:
     {{
-        "thoughts": "your reasoning about what command to run and why",
-        "tool_calls": [
-            {{
-                "tool": "command_execution",
-                "parameters": {{
-                    "command": "the command to execute"
-                }}
-            }}
-        ]
+        "thoughts": "Your thoughts on the how the command will help you answer the user's question",
+        "cli_command": "the command to execute"
     }}
+    
+    For example, to run a date command:
+    {{
+        "thoughts": "Getting the date",
+        "cli_command": "date +%A"
+    }}
+    
     If no command needs to be run, simply respond to the users prompt.
     
     User prompt: {query}"""
-
 
     # Do ollama call
     should_use_command_line_json = ollama.generate_response(initial_prompt, model=model, temperature=temperature)
     logger.info(f"Ollama response: {should_use_command_line_json}")
     # if should_use_command_line_json is a json object, then we should execute the command
-    if should_use_command_line_json.startswith("{") or should_use_command_line_json.startswith("```json"):
+    if "{" in should_use_command_line_json or "```json" in should_use_command_line_json.startswith:
         # Execute the command
         logger.info("Should execute command")
         result = await parse_and_execute_tool_call(should_use_command_line_json)
@@ -77,10 +97,12 @@ async def generate_response(
             #yield tool_result
 
             # Generate and stream followup response
-            followup_prompt = f"""Based on your command execution results:
+            followup_prompt = f"""Based on the command execution results, that you the AI assistant executed, the output was:
                                 {result.output or 'No output'}
                                 {f"Error: {result.error}" if result.error else ""}
                                 Please provide a final response to: {query}
+                                Do not provide a disclaimer for the command execution. The user is aware that the AI assistant executed the command.
+                                If the command has failed, offer an apology and tell the user you are still learning how to use the cli.
                                 """ 
             
             #yield "\n\nFinal Response:\n"
