@@ -65,18 +65,16 @@ async def generate_response(
     initial_prompt = f"""You are an AI assistant. 
                      You are able to execute the following command line tools: {ALLOWED_COMMANDS}
     
-    Examine the user's request. If the user's request would benefit from executing a command line tool, respond with JSON in this format:
+    Examine the user's request. If the user's request would benefit from executing a command line tool, ONLY respond with JSON in this format:
     {{
-        "thoughts": "Your thoughts on the how the command will help you answer the user's question",
         "cli_command": "the command to execute"
     }}
     
     For example, to run a date command:
     {{
-        "thoughts": "Getting the date",
         "cli_command": "date +%A"
     }}
-    Do not escape double quotes in the JSON with a \.
+    DO NOT escape characters with a \\.
     
     If no command needs to be run, simply respond to the users prompt.
     
