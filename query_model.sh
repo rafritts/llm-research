@@ -2,7 +2,7 @@
 # Optional parameters with defaults
 CONTEXT_WINDOW=${2:-5} # Default to 5 documents
 TEMPERATURE=${3:-0.7} # Default temperature 0.7
-query="Describe the steps for how to build a house by hand. Assume its in the woods, and its a small cabin."
+query="Describe the steps for how to build a house by hand. Assume its in the woods, and its a small cabin. Use only hand tools."
 
 # Function to show a spinner
 spinner() {
