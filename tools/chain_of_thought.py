@@ -42,6 +42,9 @@ class ChainOfThoughtTool(BaseTool):
             # Format the output
             output = f"Chain-of-Thought Analysis:\n\n{response}"
 
+            # Log the output
+            logger.info(f"Chain-of-Thought output: {output}")
+
             return ToolResponse(output=output, error=None)
         except Exception as e:
             logger.error(f"Chain-of-Thought execution error: {str(e)}")

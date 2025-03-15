@@ -21,7 +21,7 @@ DEFAULT_MODEL = ModelNames.GEMMA
 TOOL_MODELS = {
     "command_execution": ModelNames.GEMMA,
     "rag_search": ModelNames.GEMMA, 
-    "chain_of_thought": ModelNames.DEEPSEEKR1,
+    "chain_of_thought": ModelNames.GEMMA,
     "embeddings": ModelNames.GEMMA
 }
 
